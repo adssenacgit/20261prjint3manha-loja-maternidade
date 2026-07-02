@@ -1,26 +1,61 @@
-spring.application.name=prjint3-backend-loja-maternidade
+pipeline {
+    agent any
+    stages {
+        stage('Verificar Repositório') {
+            steps {
+                checkout([$class: 'GitSCM', branches: [[name: '*/main']], useRemoteConfigs: [[url: 'https://github.com/adssenacgit/20261prjint3manha-mentoria']]])
+            }
+        }
 
-# Banco de dados
-spring.datasource.url=jdbc:mysql://edumysql.acesso.rj.senac.br:3306/20261_prjint3_manha_isabelpaz?useSSL=false&serverTimezone=UTC&useUnicode=true&characterEncoding=latin1
-spring.datasource.username=20261_prjint3_manha
-spring.datasource.password=senac@13465
-spring.datasource.driver-class-name=com.mysql.jdbc.Driver
+        stage('Instalar Dependências') {
+            steps {
+                script {
+                    // Atualiza o PATH se necessário
+                    env.PATH = "/usr/bin:$PATH"
+                    // Instalar as dependências Maven antes de compilar o projeto
+                    sh 'mvn clean install'  // Instala as dependências do Maven
 
-# JPA / Hibernate
-spring.jpa.hibernate.ddl-auto=none
-spring.jpa.show-sql=true
-spring.jpa.properties.hibernate.format_sql=true
-spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.MySQLDialect
-spring.jpa.open-in-view=false
+                    //dir('subpasta') {
+                    //  sh "docker build -t ${imageTag} ."
+                    //}
 
-# Swagger / OpenAPI
-springdoc.api-docs.path=/v3/api-docs
-springdoc.swagger-ui.path=/swagger-ui.html
-# Evita erro de pattern do Swagger UI em algumas combinações Spring Boot/SpringDoc
-spring.mvc.pathmatch.matching-strategy=ant_path_matcher
+                }
+            }
+        }
+        stage('Construir Imagem Docker') {
+            steps {
+                script {
+                    def appName = 'backend-prjint3-loja-maternidade'
+                    def imageTag = "${appName}:${env.BUILD_ID}"
 
-spring.jpa.hibernate.naming.physical-strategy=org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
-spring.jpa.hibernate.naming.implicit-strategy=org.hibernate.boot.model.naming.ImplicitNamingStrategyLegacyJpaImpl
+                    // Construir a imagem Docker
+                    sh "docker build -t ${imageTag} ."
+                }
+            }
+        }
 
-# Porta da API
-server.port=4010
+        stage('Fazer Deploy') {
+            steps {
+                script {
+                    def appName = 'backend-prjint3-loja-maternidade'
+                    def imageTag = "${appName}:${env.BUILD_ID}"
+
+                    // Parar e remover o container existente, se houver
+            		sh "docker stop ${appName} || exit 0"
+            		sh "docker rm -v ${appName} || exit 0"  // Remover o container e os volumes associados
+
+                    // Executar o novo container
+                    sh "docker run -d --name ${appName} -p 4010:4010 ${imageTag}"
+                }
+            }
+        }
+    }
+    post {
+        success {
+            echo 'Deploy realizado com sucesso!'
+        }
+        failure {
+            echo 'Houve um erro durante o deploy.'
+        }
+    }
+}
